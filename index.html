@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chess - Play vs AI</title>
+    
+    <!-- PWA Manifest & Theme Color -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#81b64c">
+    
+    <!-- Chess.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <style>
+        /* --- CSS VARIABLES --- */
+        :root {
+            --bg-dark: #1e1d1b;
+            --bg-card: #262522;
+            --primary-green: #81b64c;
+            --primary-yellow: #ffc107;
+            --text-main: #ffffff;
+            --text-muted: #989795;
+            --board-light: #f0d9b5;
+            --board-dark: #b58863;
+            --check-color: #ff4d4d;
+            --input-bg: #302e2b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- SCREEN ANIMATIONS --- */
+        #app-container { width: 100%; height: 100%; position: relative; overflow: hidden; }
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            overflow-y: auto; background: var(--bg-dark);
+            transition: transform 0.3s ease-in-out; 
+            padding-bottom: 80px;
+        }
+        .screen-hidden-right { transform: translateX(100%); }
+        .screen-hidden-left { transform: translateX(-100%); }
+
+        /* --- 1. HOME SCREEN UI --- */
+        .header { padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .header-title { font-weight: 800; font-size: 1.2rem; display: flex; align-items: center; gap: 8px;}
+        
+        .premium-banner {
+            background: linear-gradient(135deg, #1b91f0 0%, #0b7ad4 100%);
+            margin: 10px 15px; padding: 20px; border-radius: 12px;
+            display: flex; align-items: center; box-shadow: 0 4px 15px rgba(27, 145, 240, 0.3);
+            cursor: pointer;
+        }
+        .gem-icon { font-size: 2.5rem; margin-right: 15px; }
+        .premium-text h3 { font-size: 1.1rem; margin-bottom: 4px; }
+        .premium-text p { font-size: 0.85rem; opacity: 0.9; }
+
+        .menu-list { margin: 20px 15px; display: flex; flex-direction: column; gap: 15px; }
+        .menu-item {
+            background-color: var(--bg-card); border-radius: 8px; padding: 15px;
+            display: flex; align-items: center; cursor: pointer; transition: background 0.2s;
+        }
+        .menu-item:active { background-color: #333230; }
+        
+        .item-thumb {
+            width: 50px; height: 50px; background-color: #888; border-radius: 4px;
+            margin-right: 15px; position: relative; display: grid;
+            grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr);
+        }
+        .t-sq { background: #eeeed2; } .t-sq:nth-child(2), .t-sq:nth-child(3) { background: #769656; }
+
+        .item-info { flex: 1; }
+        .item-title { font-weight: 700; font-size: 1rem; margin-bottom: 3px; }
+        .item-sub { color: var(--text-muted); font-size: 0.85rem; }
+        .item-status { font-size: 0.8rem; font-weight: bold; color: #d1d1d1; }
+
+        .play-btn-float {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            width: 90%; background-color: var(--primary-green); color: white;
+            padding: 15px; border-radius: 8px; text-align: center;
+            font-weight: 800; font-size: 1.2rem; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            border: none; cursor: pointer; z-index: 10;
+        }
+
+        /* --- 2. LEVEL SELECTION SCREEN --- */
+        #level-screen { background-color: #111; display: flex; flex-direction: column; }
+        
+        .level-header {
+            padding: 20px; display: flex; align-items: center; justify-content: flex-start;
+            gap: 20px; font-size: 1.5rem; font-weight: bold; color: white;
+        }
+        .back-arrow { font-size: 1.5rem; background: none; border: none; color: white; cursor: pointer; }
+
+        .level-grid {
+            display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;
+            padding: 20px; overflow-y: auto; flex: 1;
+        }
+
+        .level-card {
+            background-color: #222; border-radius: 8px; height: 80px;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 15px; cursor: pointer; border: 1px solid #333; position: relative;
+        }
+        .level-card.selected { border: 2px solid var(--primary-yellow); background-color: #2a2a2a; }
+        .level-card.locked { opacity: 0.5; pointer-events: none; }
+
+        .lvl-label { font-size: 1.1rem; font-weight: bold; color: #ccc; }
+        .lvl-num { font-size: 3rem; position: absolute; left: 10px; font-weight: 900; color: rgba(255,255,255,0.05); }
+        .icon-lock { font-size: 1.5rem; color: #ffa500; }
+        .icon-star { color: var(--primary-yellow); font-size: 1.2rem; }
+
+        .play-level-btn {
+            background-color: var(--primary-yellow); color: black;
+            font-weight: 900; font-size: 1.2rem; padding: 15px;
+            border: none; margin: 20px; border-radius: 8px; cursor: pointer;
+        }
+
+        /* --- 3. SETTINGS & PROFILE SCREEN --- */
+        #settings-screen { background-color: var(--bg-dark); }
+        .settings-content { padding: 20px; }
+        
+        .profile-card {
+            background-color: var(--bg-card); padding: 20px; border-radius: 12px;
+            display: flex; flex-direction: column; align-items: center; margin-bottom: 20px;
+            text-align: center;
+        }
+        .profile-avatar {
+            width: 80px; height: 80px; background: #444; border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 2.5rem; margin-bottom: 10px; color: #aaa;
+        }
+        .profile-name { font-size: 1.2rem; font-weight: bold; margin-bottom: 5px; }
+        .profile-email { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 15px; }
+
+        .login-form { width: 100%; display: flex; flex-direction: column; gap: 15px; }
+        .form-label { text-align: left; font-size: 0.9rem; color: #ccc; margin-bottom: 5px; display: block; }
+        .form-input {
+            width: 100%; padding: 12px; background: var(--input-bg); border: 1px solid #444;
+            border-radius: 6px; color: white; outline: none; font-size: 1rem;
+        }
+        .form-input:focus { border-color: var(--primary-green); }
+        
+        .login-btn {
+            background-color: var(--primary-green); color: white; padding: 12px;
+            border: none; border-radius: 6px; font-weight: bold; font-size: 1rem;
+            cursor: pointer; margin-top: 10px;
+        }
+        .logout-btn {
+            background-color: #d9534f; color: white; padding: 12px;
+            border: none; border-radius: 6px; font-weight: bold; font-size: 1rem;
+            cursor: pointer; margin-top: 10px; width: 100%;
+        }
+
+        /* NEW SETTINGS LINKS STYLES */
+        .settings-links {
+            display: flex; flex-direction: column; gap: 10px; margin-top: 10px;
+        }
+        .setting-link-item {
+            background-color: var(--bg-card); padding: 16px; border-radius: 8px;
+            color: white; text-decoration: none; display: flex; justify-content: space-between;
+            align-items: center; font-weight: bold; font-size: 1rem;
+        }
+        .setting-link-item:active { background-color: #333; }
+
+        /* --- 4. GAME SCREEN UI --- */
+        #game-screen {
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiPjxmaWx0ZXIgaWQ9Im4iPjxmZVR1cmJ1bGVuY2UgdHlwZT0iZnJhY3RhbE5vaXNlIiBiYXNlRnJlcXVlbmN5PSIwLjUiIG51bU9jdGF2ZXM9IjEiIHN0aXRjaFRpbGVzPSJzdGl0Y2giLz48L2ZpbHRlcj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjM2UyZTJiIi8+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsdGVyPSJ1cmwoI24pIiBvcGFjaXR5PSIwLjEiLz48L3N2Zz4=');
+        }
+        .game-top {
+            position: absolute; top: 0; width: 100%; padding: 10px;
+            display: flex; justify-content: space-between; background: rgba(0,0,0,0.5); z-index: 50;
+        }
+        .btn-game { background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; padding: 0 10px; }
+
+        .player-info {
+            display: flex; align-items: center; gap: 10px; color: white;
+            margin: 10px 0; width: 100%; max-width: 400px; padding: 0 10px; z-index: 2;
+        }
+        .avatar {
+            width: 40px; height: 40px; border-radius: 5px; background: #ccc;
+            display: flex; justify-content: center; align-items: center; font-weight: bold; color: #333;
+        }
+
+        #chessboard {
+            width: 95vw; max-width: 400px; height: 95vw; max-height: 400px;
+            display: grid; grid-template-columns: repeat(8, 1fr);
+            border: 5px solid #5c4033; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            background-color: var(--board-dark); position: relative; z-index: 1;
+        }
+
+        .square { display: flex; justify-content: center; align-items: center; position: relative; }
+        .square.light { background-color: var(--board-light); }
+        .square.dark { background-color: var(--board-dark); }
+        .square.selected { background-color: rgba(255, 255, 0, 0.5) !important; }
+        .square.last-move { background-color: rgba(155, 199, 0, 0.6) !important; }
+        .square.in-check { background: radial-gradient(circle, var(--check-color) 20%, transparent 80%) !important; }
+        
+        .valid-move::after { content: ''; width: 30%; height: 30%; background: rgba(0,0,0,0.2); border-radius: 50%; }
+        .valid-capture::after { width: 80%; height: 80%; border: 4px solid rgba(0,0,0,0.2); border-radius: 50%; }
+
+        .piece { width: 90%; height: 90%; background-size: contain; background-repeat: no-repeat; background-position: center; cursor: pointer; z-index: 2; }
+
+        /* MODAL */
+        #game-modal {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); display: none;
+            justify-content: center; align-items: center; z-index: 100;
+        }
+        .modal-box {
+            background: #222; padding: 30px; border-radius: 12px; text-align: center; border: 2px solid var(--primary-yellow);
+            width: 80%; max-width: 300px;
+        }
+        .modal-btn {
+            background: var(--primary-yellow); color: black; padding: 10px 20px;
+            border: none; border-radius: 20px; font-weight: bold; margin-top: 15px; cursor: pointer; width: 100%;
+        }
+
+        /* BOTTOM NAV */
+        .bottom-nav {
+            position: fixed; bottom: 0; width: 100%; height: 60px;
+            background-color: #161512; display: flex; justify-content: space-around;
+            align-items: center; border-top: 1px solid #333; z-index: 20;
+        }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #777; font-size: 0.7rem; cursor: pointer; }
+        .nav-icon { font-size: 1.4rem; }
+        .active-nav { color: white; }
+
+        #engine-loader { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: black; padding: 20px; color: white; display: none; z-index: 200; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    
+    <!-- 1. HOME SCREEN -->
+    <div id="home-screen" class="screen">
+        <div class="header">
+            <div class="header-title"><span>♟️ Chess</span></div>
+        </div>
+
+        <div class="premium-banner">
+            <div class="gem-icon">💎</div>
+            <div class="premium-text"><h3>Try Premium</h3><p>Play your best chess!</p></div>
+        </div>
+
+        <div class="menu-list">
+            <div class="menu-item" onclick="showLevelScreen()">
+                <div class="item-thumb"><div class="t-sq"></div><div class="t-sq"></div><div class="t-sq"></div><div class="t-sq"></div></div>
+                <div class="item-info"><div class="item-title">Play vs AI</div><div class="item-sub">Campaign Mode • Levels 1-10</div></div>
+                <div class="item-status" style="color: white; background: #333; padding: 2px 6px; border-radius: 4px;">Play</div>
+            </div>
+            
+            <div class="menu-item">
+                <div class="item-thumb" style="background:#444"></div>
+                <div class="item-info"><div class="item-title">Play Online</div><div class="item-sub">Coming Soon</div></div>
+            </div>
+        </div>
+
+        <button class="play-btn-float" onclick="showLevelScreen()">New Game</button>
+    </div>
+
+    <!-- 2. LEVEL SELECTION SCREEN -->
+    <div id="level-screen" class="screen screen-hidden-right">
+        <div class="level-header">
+            <button class="back-arrow" onclick="goBackToHome()">⬅</button>
+            <span>SELECT LEVEL</span>
+        </div>
+        <div class="level-grid" id="level-container"></div>
+        <button class="play-level-btn" onclick="startSelectedLevel()">PLAY</button>
+    </div>
+
+    <!-- 3. SETTINGS & PROFILE SCREEN -->
+    <div id="settings-screen" class="screen screen-hidden-right">
+        <div class="level-header">
+            <button class="back-arrow" onclick="goBackToHome()">⬅</button>
+            <span>PROFILE & SETTINGS</span>
+        </div>
+        
+        <div class="settings-content">
+            <!-- Profile Info -->
+            <div class="profile-card">
+                <div class="profile-avatar">👤</div>
+                <div class="profile-name" id="display-name">Guest Player</div>
+                <div class="profile-email" id="display-email">Not logged in</div>
+                
+                <!-- Login Form (Hidden if logged in) -->
+                <div id="login-section" class="login-form">
+                    <div style="width:100%">
+                        <label class="form-label">Email</label>
+                        <input type="email" id="email-input" class="form-input" placeholder="Enter email">
+                    </div>
+                    <div style="width:100%">
+                        <label class="form-label">Password</label>
+                        <input type="password" id="pass-input" class="form-input" placeholder="Enter password">
+                    </div>
+                    <button class="login-btn" onclick="handleLogin()">Log In</button>
+                    <p style="font-size:0.7rem; color:#777; margin-top:10px;">Login to save your progress safely.</p>
+                </div>
+
+                <!-- Logout Section (Hidden if logged out) -->
+                <div id="logout-section" style="display:none; width:100%;">
+                    <button class="logout-btn" onclick="handleLogout()">Log Out</button>
+                </div>
+            </div>
+
+            <!-- ADDED: Privacy & Terms Links -->
+            <div class="settings-links">
+                <a href="https://zawad9990-hue.github.io/chess-privacy/" class="setting-link-item">
+                    <span>🛡️ Privacy Policy</span>
+                    <span style="color:#666">›</span>
+                </a>
+                <a href="https://zawad9990-hue.github.io/chess-terms-/" class="setting-link-item">
+                    <span>📄 Terms and Conditions</span>
+                    <span style="color:#666">›</span>
+                </a>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 4. GAME SCREEN -->
+    <div id="game-screen" class="screen screen-hidden-right">
+        <div class="game-top">
+            <button class="btn-game" onclick="quitGame()">☰</button>
+            <span style="color:var(--primary-yellow); font-weight:bold" id="level-indicator">LEVEL 1</span>
+            <button class="btn-game" onclick="initGame(currentLevel)">↻</button>
+        </div>
+
+        <div style="height: 60px;"></div>
+
+        <div class="player-info">
+            <div class="avatar">🤖</div>
+            <div>
+                <div id="ai-name">AI Opponent</div>
+                <div id="ai-status" style="font-size:0.8rem; color:#ccc;">Ready</div>
+            </div>
+        </div>
+
+        <div id="chessboard"></div>
+
+        <div class="player-info">
+            <div class="avatar" style="background: var(--primary-green);">👤</div>
+            <div>
+                <div id="player-label-game">You</div>
+                <div style="font-size:0.8rem; color:#ccc;">White</div>
+            </div>
+        </div>
+        
+        <!-- Win Modal -->
+        <div id="game-modal">
+            <div class="modal-box">
+                <h2 id="modal-title" style="color: var(--primary-yellow);">VICTORY!</h2>
+                <p id="modal-msg" style="color: #ccc; margin-bottom: 20px;">Level Completed</p>
+                <button class="modal-btn" onclick="handleModalAction()">CONTINUE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <div class="bottom-nav" id="btm-nav">
+        <div class="nav-item active-nav" onclick="goBackToHome()">
+            <span class="nav-icon">🏠</span><span>Home</span>
+        </div>
+        <div class="nav-item">
+            <span class="nav-icon">🧩</span><span>Puzzles</span>
+        </div>
+        <div class="nav-item" onclick="showSettings()">
+            <span class="nav-icon">⚙️</span><span>Settings</span>
+        </div>
+    </div>
+    
+    <div id="engine-loader">Initializing AI...</div>
+</div>
+
+<script>
+    // --- ASSETS ---
+    const pieceImages = {
+        'w-p': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
+        'w-r': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+        'w-n': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+        'w-b': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+        'w-q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+        'w-k': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+        'b-p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
+        'b-r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+        'b-n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+        'b-b': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+        'b-q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+        'b-k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+    };
+
+    // --- GAME VARS ---
+    let game = new Chess();
+    let stockfish = null;
+    let isEngineReady = false;
+    let selectedSquare = null;
+    let boardEl = document.getElementById('chessboard');
+    
+    // Level Data
+    let currentLevel = 1;
+    let maxUnlockedLevel = parseInt(localStorage.getItem('chess_level_max')) || 1;
+    let selectedLevel = maxUnlockedLevel;
+
+    // User Data
+    let currentUser = localStorage.getItem('chess_user_email');
+    updateProfileUI();
+
+    // --- NAVIGATION LOGIC ---
+    function showLevelScreen() {
+        document.getElementById('home-screen').classList.add('screen-hidden-left');
+        document.getElementById('level-screen').classList.remove('screen-hidden-right');
+        document.getElementById('btm-nav').style.display = 'none'; 
+        renderLevelGrid();
+    }
+
+    function showSettings() {
+        document.getElementById('home-screen').classList.add('screen-hidden-left');
+        document.getElementById('settings-screen').classList.remove('screen-hidden-right');
+        document.getElementById('btm-nav').style.display = 'none';
+        updateProfileUI();
+    }
+
+    function goBackToHome() {
+        // Reset all screens to hidden except home
+        document.getElementById('home-screen').classList.remove('screen-hidden-left');
+        document.getElementById('level-screen').classList.add('screen-hidden-right');
+        document.getElementById('game-screen').classList.add('screen-hidden-right');
+        document.getElementById('settings-screen').classList.add('screen-hidden-right');
+        document.getElementById('btm-nav').style.display = 'flex';
+    }
+
+    function startSelectedLevel() {
+        if(selectedLevel > maxUnlockedLevel) return;
+        currentLevel = selectedLevel;
+        document.getElementById('level-screen').classList.add('screen-hidden-left');
+        document.getElementById('game-screen').classList.remove('screen-hidden-right');
+        
+        initStockfish();
+        initGame(currentLevel);
+    }
+
+    function quitGame() {
+        document.getElementById('game-screen').classList.add('screen-hidden-right');
+        document.getElementById('level-screen').classList.remove('screen-hidden-left');
+        renderLevelGrid();
+    }
+
+    // --- LOGIN LOGIC ---
+    function handleLogin() {
+        const email = document.getElementById('email-input').value;
+        const pass = document.getElementById('pass-input').value;
+
+        if(email && pass) {
+            // Simulate login
+            localStorage.setItem('chess_user_email', email);
+            currentUser = email;
+            alert("Login Successful!");
+            updateProfileUI();
+        } else {
+            alert("Please enter email and password");
+        }
+    }
+
+    function handleLogout() {
+        localStorage.removeItem('chess_user_email');
+        currentUser = null;
+        updateProfileUI();
+    }
+
+    function updateProfileUI() {
+        const nameEl = document.getElementById('display-name');
+        const emailEl = document.getElementById('display-email');
+        const loginSec = document.getElementById('login-section');
+        const logoutSec = document.getElementById('logout-section');
+        const gameLabel = document.getElementById('player-label-game');
+
+        if(currentUser) {
+            nameEl.innerText = currentUser.split('@')[0]; // Simple name from email
+            emailEl.innerText = currentUser;
+            loginSec.style.display = 'none';
+            logoutSec.style.display = 'block';
+            gameLabel.innerText = currentUser.split('@')[0];
+        } else {
+            nameEl.innerText = "Guest Player";
+            emailEl.innerText = "Not logged in";
+            loginSec.style.display = 'flex';
+            logoutSec.style.display = 'none';
+            gameLabel.innerText = "You";
+        }
+    }
+
+    // --- LEVEL GRID RENDERER ---
+    function renderLevelGrid() {
+        const container = document.getElementById('level-container');
+        container.innerHTML = '';
+
+        for(let i=1; i<=10; i++) {
+            const isUnlocked = i <= maxUnlockedLevel;
+            const div = document.createElement('div');
+            
+            div.className = 'level-card';
+            if(!isUnlocked) div.classList.add('locked');
+            if(selectedLevel === i) div.classList.add('selected');
+
+            let icon = '<span class="icon-lock">🔒</span>';
+            if(isUnlocked) {
+                 if(i < maxUnlockedLevel) icon = '<span class="icon-star">★</span>'; 
+                 else icon = '<span class="icon-star" style="opacity:0.3">★</span>'; 
+            }
+
+            // Description for level
+            let desc = "Beginner";
+            if(i>3) desc = "Medium";
+            if(i>6) desc = "Expert";
+            if(i>8) desc = "Grand Master";
+
+            div.innerHTML = `
+                <div class="lvl-num">${i}</div>
+                <div>
+                    <div class="lvl-label">LEVEL ${i}</div>
+                    <div style="font-size:0.7rem; color:#888;">${desc}</div>
+                </div>
+                ${icon}
+            `;
+
+            if(isUnlocked) {
+                div.onclick = () => {
+                    selectedLevel = i;
+                    renderLevelGrid();
+                };
+            }
+            container.appendChild(div);
+        }
+    }
+
+    // --- STOCKFISH SETUP ---
+    function initStockfish() {
+        if(stockfish) return;
+        document.getElementById('engine-loader').style.display = 'block';
+        
+        // Stockfish 10 from CDN
+        const url = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js';
+        
+        fetch(url).then(r => r.text()).then(txt => {
+            const blob = new Blob([txt], { type: 'application/javascript' });
+            stockfish = new Worker(URL.createObjectURL(blob));
+            
+            stockfish.onmessage = (e) => {
+                const msg = e.data;
+                
+                if(msg === 'uciok') {
+                    isEngineReady = true;
+                    document.getElementById('engine-loader').style.display = 'none';
+                }
+                
+                // Handling moves
+                if(typeof msg === 'string' && msg.startsWith('bestmove')) {
+                    const moveData = msg.split(' ')[1];
+                    if(moveData) {
+                        const from = moveData.substring(0,2);
+                        const to = moveData.substring(2,4);
+                        const promotion = moveData.length > 4 ? moveData.substring(4,5) : 'q';
+                        
+                        game.move({ from, to, promotion });
+                        renderBoard();
+                        checkGameOver();
+                        document.getElementById('ai-status').innerText = "Your Turn";
+                    }
+                }
+            };
+            
+            stockfish.postMessage('uci');
+        });
+    }
+
+    // --- DIFFICULTY LOGIC (CORE REQUEST) ---
+    function getDiffParams(lvl) {
+        // Stockfish Skill Level: 0 (Weakest) to 20 (Strongest)
+        
+        switch(lvl) {
+            case 1: return { skill: 0, depth: 1, time: 10 };   // Extremely Weak
+            case 2: return { skill: 0, depth: 2, time: 50 };   // Very Weak
+            case 3: return { skill: 0, depth: 3, time: 100 };  // Weak
+            case 4: return { skill: 7, depth: 4, time: 300 };  // Hard
+            case 5: return { skill: 9, depth: 5, time: 400 };  // Advanced
+            case 6: return { skill: 12, depth: 7, time: 600 }; // Expert
+            case 7: return { skill: 14, depth: 9, time: 800 }; // CM
+            case 8: return { skill: 16, depth: 11, time: 1000 }; // Master
+            case 9: return { skill: 19, depth: 14, time: 1500 }; // GM
+            case 10: return { skill: 20, depth: 18, time: 2500 }; // GM Max
+            default: return { skill: 0, depth: 1, time: 50 };
+        }
+    }
+
+    // --- GAMEPLAY ---
+    function initGame(lvl) {
+        game.reset();
+        selectedSquare = null;
+        document.getElementById('level-indicator').innerText = `LEVEL ${lvl}`;
+        
+        let title = "AI Opponent";
+        if(lvl <= 3) title = "Beginner AI";
+        else if(lvl <= 6) title = "Advanced AI";
+        else if(lvl <= 9) title = "Master AI";
+        else title = "Grandmaster Stockfish";
+        
+        document.getElementById('ai-name').innerText = title;
+        document.getElementById('game-modal').style.display = 'none';
+        renderBoard();
+    }
+
+    function renderBoard() {
+        boardEl.innerHTML = '';
+        const board = game.board();
+        const moves = selectedSquare ? game.moves({square: selectedSquare, verbose:true}) : [];
+        
+        for(let r=0; r<8; r++){
+            for(let c=0; c<8; c++){
+                const sqCode = String.fromCharCode(97+c) + (8-r);
+                const piece = board[r][c];
+                const div = document.createElement('div');
+                div.className = `square ${(r+c)%2===0?'light':'dark'}`;
+                
+                if(selectedSquare === sqCode) div.classList.add('selected');
+                
+                // History Highlight
+                const hist = game.history({verbose:true});
+                if(hist.length){
+                    const last = hist[hist.length-1];
+                    if(last.from===sqCode || last.to===sqCode) div.classList.add('last-move');
+                }
+                
+                // Check Highlight
+                if(game.in_check() && piece && piece.type==='k' && piece.color===game.turn()) {
+                    div.classList.add('in-check');
+                }
+
+                // Valid moves
+                const valid = moves.find(m => m.to === sqCode);
+                if(valid) {
+                    if(piece) div.classList.add('valid-capture');
+                    else div.classList.add('valid-move');
+                }
+
+                div.onclick = () => handleClick(sqCode);
+
+                if(piece) {
+                    const img = document.createElement('div');
+                    img.className = 'piece';
+                    img.style.backgroundImage = `url('${pieceImages[piece.color+'-'+piece.type]}')`;
+                    div.appendChild(img);
+                }
+                boardEl.appendChild(div);
+            }
+        }
+    }
+
+    function handleClick(sq) {
+        if(game.game_over() || game.turn() === 'b') return; // User is White
+
+        if(selectedSquare) {
+            const move = game.move({ from: selectedSquare, to: sq, promotion: 'q' });
+            if(move) {
+                selectedSquare = null;
+                renderBoard();
+                if(!checkGameOver()) {
+                    document.getElementById('ai-status').innerText = "Thinking...";
+                    setTimeout(makeAiMove, 250);
+                }
+                return;
+            }
+        }
+
+        const p = game.get(sq);
+        if(p && p.color === 'w') {
+            selectedSquare = sq;
+            renderBoard();
+        } else {
+            selectedSquare = null;
+            renderBoard();
+        }
+    }
+
+    function makeAiMove() {
+        // --- RANDOM BLUNDER LOGIC FOR EASY LEVELS ---
+        // Level 1: 40% chance of random move
+        // Level 2: 20% chance of random move
+        let blunderChance = 0;
+        if(currentLevel === 1) blunderChance = 0.4;
+        if(currentLevel === 2) blunderChance = 0.2;
+
+        if (Math.random() < blunderChance) {
+            const possibleMoves = game.moves();
+            if (possibleMoves.length > 0) {
+                const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                game.move(randomMove);
+                renderBoard();
+                checkGameOver();
+                document.getElementById('ai-status').innerText = "Your Turn";
+                return; // Skip Stockfish
+            }
+        }
+        // ---------------------------------------------
+
+        if(!isEngineReady) {
+            // Fallback random if engine fails to load
+            const m = game.moves();
+            if(m.length) game.move(m[Math.floor(Math.random()*m.length)]);
+            renderBoard();
+            checkGameOver();
+            return;
+        }
+
+        const config = getDiffParams(currentLevel);
+        
+        // 1. Reset for new search
+        stockfish.postMessage('ucinewgame');
+        
+        // 2. Set Skill Level (Difficulty)
+        stockfish.postMessage(`setoption name Skill Level value ${config.skill}`);
+        
+        // 3. Set Position
+        stockfish.postMessage(`position fen ${game.fen()}`);
+        
+        // 4. Go (Calculate)
+        stockfish.postMessage(`go depth ${config.depth} movetime ${config.time}`);
+    }
+
+    function checkGameOver() {
+        if(game.game_over()) {
+            let title = "DRAW", msg = "Stalemate";
+            let action = "retry";
+
+            if(game.in_checkmate()) {
+                // If it's Black's turn and Checkmate -> White (User) Won
+                if(game.turn() === 'b') {
+                    title = "VICTORY!";
+                    msg = `Level ${currentLevel} Defeated!`;
+                    action = "next";
+                    
+                    // Unlock Logic
+                    if(currentLevel === maxUnlockedLevel && maxUnlockedLevel < 10) {
+                        maxUnlockedLevel++;
+                        localStorage.setItem('chess_level_max', maxUnlockedLevel);
+                    }
+                } else {
+                    title = "DEFEAT";
+                    msg = "AI won this round.";
+                }
+            } else if(game.in_draw()) {
+                msg = "Draw by insufficient material or repetition.";
+            }
+            
+            showModal(title, msg, action);
+            return true;
+        }
+        return false;
+    }
+
+    function showModal(t, m, act) {
+        document.getElementById('modal-title').innerText = t;
+        document.getElementById('modal-msg').innerText = m;
+        const btn = document.querySelector('.modal-btn');
+        
+        if(act === 'next') {
+            if(currentLevel === 10) {
+                btn.innerText = "MAX LEVEL REACHED!";
+                btn.onclick = () => quitGame();
+            } else {
+                btn.innerText = "NEXT LEVEL";
+                btn.onclick = () => {
+                    selectedLevel = currentLevel + 1;
+                    startSelectedLevel(); // Immediately start next level
+                };
+            }
+        } else {
+            btn.innerText = "RETRY";
+            btn.onclick = () => initGame(currentLevel);
+        }
+        document.getElementById('game-modal').style.display = 'flex';
+    }
+
+    function handleModalAction() {
+        document.getElementById('game-modal').style.display = 'none';
+    }
+</script>
+
+<!-- Service Worker Registration -->
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js");
+}
+</script>
+
+</body>
+</html>
